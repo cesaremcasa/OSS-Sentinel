@@ -180,7 +180,7 @@ python main.py
 │   └── plots/             # Generated visualizations
 ├── main.py                # Full pipeline orchestrator
 ├── requirements.txt
-├── .env.example
+
 ├── .gitignore
 └── README.md
 ```
