@@ -75,8 +75,8 @@ Sits between the two. High urgency bugs are prevalent, but the community is slig
 Clone the repository:
 
 ```bash
-git clone https://github.com/cesaremcasa/oss-sentinel.git
-cd oss-sentinel
+git clone https://github.com/cesaremcasa/OSS-Sentinel.git
+cd OSS-Sentinel
 ```
 
 Create and activate virtual environment:
@@ -235,9 +235,9 @@ Contributions are welcome! Please open an issue or submit a pull request.
 
 ## Contact
 
-For questions or collaboration opportunities, please reach out via [GitHub Issues](https://github.com/cesaremcasa/oss-sentinel/issues).
+For questions or collaboration opportunities, please reach out via [GitHub Issues](https://github.com/cesaremcasa/OSS-Sentinel/issues).
 
 ---
 
 **Cesar Augusto**  
-Data Engineer & AI Systems Architect
+AI Systems Engineer, Mycellium Lab
