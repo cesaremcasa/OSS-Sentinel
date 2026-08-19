@@ -1,6 +1,9 @@
 # Python
 __pycache__/
 *.py[cod]
+*.egg-info/
+build/
+dist/
 *.class
 *.so
 .Python
@@ -19,6 +22,9 @@ data/raw/*
 data/processed/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
+data/enriched/*
+data/analysis/*
+assets/plots/*
 
 # Logs
 logs/*.log

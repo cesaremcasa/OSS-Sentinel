@@ -1,60 +1,34 @@
-import os
 import pandas as pd
-import json
 import logging
 from pathlib import Path
-from dotenv import load_dotenv
-from openai import OpenAI
 
-# --- CONFIGURAÇÃO DE AMBIENTE ---
+from src.providers import IssueClassifier, make_provider
+
 BASE_DIR = Path(__file__).resolve().parent.parent
-ENV_PATH = BASE_DIR / "config" / ".env"
-load_dotenv(ENV_PATH)
 
 # Configuração de Logs
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Inicializa cliente OpenAI
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
 class EnrichmentEngine:
-    def __init__(self, processed_dir="data/processed", enriched_dir="data/enriched"):
+    def __init__(
+        self,
+        processed_dir="data/processed",
+        enriched_dir="data/enriched",
+        provider: IssueClassifier | None = None,
+        provider_name: str | None = None,
+    ):
         self.processed_dir = BASE_DIR / processed_dir
         self.enriched_dir = BASE_DIR / enriched_dir
         self.enriched_dir.mkdir(parents=True, exist_ok=True)
+        self.provider = provider or make_provider(provider_name)
 
     def classify_issue(self, title: str, body: str):
-        """Envia title e body para o gpt-4o-mini e retorna dict JSON."""
-        text_content = f"Title: {title}\nBody: {body}"
-        # Trunca para evitar ultrapassar limites de token (segurança)
-        if len(text_content) > 2000:
-            text_content = text_content[:2000] + "..."
-
+        """Classify one issue through the selected provider."""
         try:
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {
-                        "role": "system", 
-                        "content": (
-                            "You are a data classification expert. "
-                            "Analyze the provided text (GitHub Issue) and return a strict JSON object. "
-                            "Do not include markdown formatting or any text outside the JSON."
-                            "JSON keys must be: sentiment, category, urgency."
-                            "Possible values for sentiment: positive, neutral, negative."
-                            "Possible values for category: bug, feature_request, documentation, question, other."
-                            "Possible values for urgency: high, medium, low."
-                        )
-                    },
-                    {"role": "user", "content": text_content}
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.1
-            )
-            return json.loads(response.choices[0].message.content)
+            return self.provider.classify_issue(str(title), str(body or ""))
         except Exception as e:
-            logger.error(f"Erro na chamada OpenAI: {e}")
+            logger.error(f"Erro no provider de enriquecimento: {e}")
             return {"sentiment": "error", "category": "unknown", "urgency": "unknown"}
 
     def run_batch(self):

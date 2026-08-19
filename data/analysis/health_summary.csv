@@ -1,4 +1,0 @@
-source_repo,Total_Issues,Sentiment_negative,Sentiment_neutral,Sentiment_positive,Category_bug,Category_documentation,Category_feature_request,Category_other,Category_question,Urgency_high,Urgency_low,Urgency_medium
-apache_superset,100,87,10,3,92,0,7,0,1,53,1,46
-grafana_grafana,100,51,37,12,58,2,37,1,2,25,2,73
-metabase_metabase,100,67,26,7,61,0,38,1,0,41,2,57
