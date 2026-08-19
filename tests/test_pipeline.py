@@ -7,14 +7,49 @@ import pandas as pd
 import pytest
 
 from src import cli
-from src.analyze import run_analysis
+from src.analyze import analyze_labels, calculate_pain_index, feature_engineering, run_analysis
 from src.enrichment import EnrichmentEngine
-from src.ingestion import IngestionEngine
+from src.ingestion import IngestionEngine, IngestionError
 from src.providers import FakeProvider, OpenAIProvider
 from src.processing import ProcessingEngine
 
 
 FIXTURE = Path(__file__).parent / "fixtures/github_issues_cc0.json"
+
+
+class FakeResponse:
+    def __init__(self, status_code, payload=None, headers=None):
+        self.status_code = status_code
+        self._payload = payload or {}
+        self.headers = headers or {}
+
+    def json(self):
+        return self._payload
+
+
+class FakeSession:
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.calls = []
+
+    def get(self, url, **kwargs):
+        self.calls.append((url, kwargs))
+        response = self.responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+
+def _engine_with_session(tmp_path, session, **kwargs):
+    config = tmp_path / "settings.yaml"
+    config.write_text("github: {}\nparameters: {}\n")
+    return IngestionEngine(
+        output_dir=tmp_path / "raw",
+        config_path=config,
+        session=session,
+        backoff=lambda _delay: None,
+        **kwargs,
+    )
 
 
 def _write_fixture(raw_dir: Path, name: str = "ingest_fixture_20260101_000000.json") -> Path:
@@ -125,3 +160,107 @@ def test_pipeline_run_uses_fake_provider_and_no_network(monkeypatch, tmp_path):
     ) == 0
     assert list((tmp_path / "enriched").glob("enriched_*.csv"))
     assert (tmp_path / "plots/barplot_pain_index_comparison.png").exists()
+
+
+def test_ingestion_paginates_to_limit_and_passes_explicit_timeout(tmp_path):
+    session = FakeSession(
+        [
+            FakeResponse(200, {"total_count": 3, "items": [{"id": 1}, {"id": 2}]}),
+            FakeResponse(200, {"total_count": 3, "items": [{"id": 3}]}),
+        ]
+    )
+    engine = _engine_with_session(tmp_path, session, timeout=4.25, cache_ttl=0)
+
+    result = engine.fetch_github_issues("repo:fixture/demo", per_page=2, max_results=3)
+
+    assert [item["id"] for item in result["items"]] == [1, 2, 3]
+    assert [call[1]["params"]["page"] for call in session.calls] == [1, 2]
+    assert all(call[1]["timeout"] == 4.25 for call in session.calls)
+
+
+def test_ingestion_retries_5xx_and_rate_limit_without_sleep(tmp_path):
+    delays = []
+    session = FakeSession(
+        [
+            FakeResponse(503),
+            FakeResponse(429, headers={"Retry-After": "0.25"}),
+            FakeResponse(200, {"total_count": 1, "items": [{"id": 9}]}),
+        ]
+    )
+    engine = _engine_with_session(tmp_path, session, cache_ttl=0)
+    engine.backoff = delays.append
+
+    assert engine.fetch_github_issues("retry", max_results=1)["items"] == [{"id": 9}]
+    assert len(session.calls) == 3
+    assert delays == [1.0, 0.25]
+
+
+def test_ingestion_rate_reset_header_is_used_and_final_error_is_safe(tmp_path):
+    now = 100.0
+    session = FakeSession(
+        [FakeResponse(403, headers={"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "103"})]
+        * 4
+    )
+    engine = _engine_with_session(tmp_path, session, cache_ttl=0, clock=lambda: now)
+    delays = []
+    engine.backoff = delays.append
+
+    with pytest.raises(IngestionError, match="after 4 attempts.*HTTP 403") as error:
+        engine.fetch_github_issues("safe-query", max_results=1)
+    assert delays == [3.0, 3.0, 3.0]
+    assert "X-RateLimit" not in str(error.value)
+    assert "token" not in str(error.value).lower()
+
+    session.responses = [FakeResponse(401, {"message": "token=do-not-leak"})]
+    with pytest.raises(IngestionError, match="HTTP 401") as rejected:
+        engine.fetch_github_issues("unauthorized", max_results=1)
+    assert "do-not-leak" not in str(rejected.value)
+
+
+def test_ingestion_cache_honors_ttl_without_second_request(tmp_path):
+    now = [10.0]
+    session = FakeSession([FakeResponse(200, {"total_count": 1, "items": [{"id": 4}]}),
+                           FakeResponse(200, {"total_count": 1, "items": [{"id": 5}]})])
+    engine = _engine_with_session(
+        tmp_path,
+        session,
+        cache_dir=tmp_path / "cache",
+        cache_ttl=5,
+        clock=lambda: now[0],
+    )
+
+    assert engine.fetch_github_issues("cached", max_results=1)["items"] == [{"id": 4}]
+    assert engine.fetch_github_issues("cached", max_results=1)["items"] == [{"id": 4}]
+    assert len(session.calls) == 1
+    now[0] = 16.0
+    assert engine.fetch_github_issues("cached", max_results=1)["items"] == [{"id": 5}]
+    assert len(session.calls) == 2
+
+
+def test_labels_are_exact_normalized_tokens_not_substrings():
+    frame = pd.DataFrame(
+        [
+            {"labels": "debug, bugfix", "sentiment": "negative", "urgency": "low"},
+            {"labels": "bug, BUG", "sentiment": "neutral", "urgency": "low"},
+        ]
+    )
+    top_labels, _ = analyze_labels(frame)
+    assert top_labels[0] == "bug"
+    assert "debug" in top_labels and "bugfix" in top_labels
+
+
+def test_pain_index_is_bounded_and_higher_means_worse():
+    assert calculate_pain_index("positive", "low") == 0.0
+    assert calculate_pain_index("neutral", "medium") == 1.0
+    assert calculate_pain_index("negative", "high") == 3.0
+    assert 0.0 <= calculate_pain_index("unknown", "unknown") <= 3.0
+
+    frame = pd.DataFrame(
+        [
+            {"sentiment": "positive", "urgency": "high"},
+            {"sentiment": "neutral", "urgency": "medium"},
+            {"sentiment": "negative", "urgency": "low"},
+        ]
+    )
+    scored = feature_engineering(frame)
+    assert list(scored["pain_index"]) == [0.0, 1.0, 1.0]

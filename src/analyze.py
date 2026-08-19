@@ -16,6 +16,20 @@ PLOTS_DIR.mkdir(parents=True, exist_ok=True)
 # Estilo profissional para plots
 sns.set_theme(style="whitegrid")
 
+SENTIMENT_PAIN = {"positive": 0.0, "neutral": 0.5, "negative": 1.0}
+URGENCY_WEIGHT = {"low": 1.0, "medium": 2.0, "high": 3.0}
+
+
+def calculate_pain_index(sentiment: str, urgency: str) -> float:
+    """Return an intuitive 0..3 pain score, where larger values are worse."""
+    return SENTIMENT_PAIN.get(str(sentiment).strip().lower(), 0.5) * URGENCY_WEIGHT.get(
+        str(urgency).strip().lower(), 1.0
+    )
+
+
+def _normalized_label_tokens(value) -> list[str]:
+    return [token.strip().lower() for token in str(value or "").split(",") if token.strip()]
+
 def load_and_clean_data(enriched_dir=ENRICHED_DIR):
     """Carrega dados, ignora POCs e adiciona source_repo."""
     dfs = []
@@ -52,18 +66,10 @@ def feature_engineering(df):
     if df.empty:
         return df
 
-    # 1. Sentiment Score
-    sentiment_map = {'positive': 1, 'neutral': 0, 'negative': -1}
-    df['sentiment_score'] = df['sentiment'].map(sentiment_map).fillna(0)
-
-    # 2. Urgency Score
-    urgency_map = {'low': 1, 'medium': 2, 'high': 3}
-    df['urgency_score'] = df['urgency'].map(urgency_map).fillna(1)
-
-    # 3. Pain Index (Produto Sentimento * Urgência)
-    # -3 (Muito Negativo + Alta Urgência) é o pior caso
-    # 3 (Muito Positivo + Alta Urgência) é um caso de "Boa Oportunidade/Feature Quente"
-    df['pain_index'] = df['sentiment_score'] * df['urgency_score']
+    # 1. Pain components: positive=0, neutral=0.5, negative=1.
+    df["sentiment_score"] = df["sentiment"].map(SENTIMENT_PAIN).fillna(0.5)
+    df["urgency_score"] = df["urgency"].map(URGENCY_WEIGHT).fillna(1.0)
+    df["pain_index"] = df["sentiment_score"] * df["urgency_score"]
     
     return df
 
@@ -72,15 +78,8 @@ def analyze_labels(df):
     if df.empty or 'labels' not in df.columns:
         return [], df
 
-    # A coluna labels veio como string separada por vírgula do processing.py (ex: "bug, ui")
-    # Vamos separar e explodir
-    all_labels = df['labels'].str.split(',').explode()
-    
-    # Limpar espaços em branco
-    all_labels = all_labels.str.strip()
-    
-    # Remover vazios
-    all_labels = all_labels[all_labels != ""]
+    all_labels = df["labels"].map(_normalized_label_tokens).explode()
+    all_labels = all_labels[all_labels.notna() & (all_labels != "")]
     
     # Contar frequência
     label_counts = all_labels.value_counts()
@@ -107,7 +106,9 @@ def generate_heatmap(df, top_labels, plots_dir=PLOTS_DIR):
     # Criamos colunas binárias (one-hot encoding para presença do label)
     for label in top_labels:
         # Verifica se a string do label está dentro da coluna 'labels'
-        plot_df[f'has_{label}'] = plot_df['labels'].apply(lambda x: label in str(x))
+        plot_df[f"has_{label}"] = plot_df["labels"].apply(
+            lambda value: label in _normalized_label_tokens(value)
+        )
     
     # Agora, para cada label top, filtramos onde has_label=True e agrupamos por repo
     heatmap_data = []
@@ -149,18 +150,17 @@ def generate_health_barplot(df, plots_dir=PLOTS_DIR):
     # Calcular média do pain index por repo
     repo_pain = df.groupby('source_repo')['pain_index'].mean().reset_index()
     
-    # Ordenar (opcional, mas bom para visualização: pior clima primeiro)
-    repo_pain = repo_pain.sort_values('pain_index', ascending=True)
+    # Higher pain is worse, so rank descending.
+    repo_pain = repo_pain.sort_values("pain_index", ascending=False)
 
     plt.figure(figsize=(10, 6))
     # Usando uma paleta que indica intensidade
     barplot = sns.barplot(x='pain_index', y='source_repo', data=repo_pain, palette="vlag")
     
-    # Adicionar linha de referência (Neutro = 0)
-    plt.axvline(x=0, color='black', linestyle='--', linewidth=1)
+    plt.xlim(0, 3)
     
     plt.title('Comparação de "Clima" (Pain Index Médio) por Repositório', fontsize=14, fontweight='bold')
-    plt.xlabel('Pain Index Médio (Negativo = Dor, Positivo = Oportunidade)', fontsize=12)
+    plt.xlabel('Pain Index Médio (0 = menor dor, 3 = maior dor)', fontsize=12)
     plt.ylabel('Repositório', fontsize=12)
     plt.tight_layout()
     

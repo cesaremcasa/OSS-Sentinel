@@ -45,7 +45,7 @@ Window: 180 Days | Sample: 100 issues/repo
 | **Metabase**      | `-1.54`    | Mixed (67% Neg / 7% Pos)     | 41%               |
 | **Apache Superset** | `-2.21`  | Critical (87% Neg)           | 53%               |
 
-**Pain Index Formula**: `(-1 to +1) × (Low:1 / Med:2 / High:3)`. Lower is "worse".
+**Pain Index Formula**: `(Positive:0 / Neutral:0.5 / Negative:1) × (Low:1 / Med:2 / High:3)`. Higher is "worse".
 
 ---
 
@@ -216,14 +216,16 @@ python main.py
 The Pain Index is calculated as:
 
 ```
-Pain Index = Sentiment_Score × Urgency_Weight
+Pain Index = Sentiment_Pain × Urgency_Weight
 ```
 
 Where:
-- **Sentiment Score**: Positive (+1), Neutral (0), Negative (-1)
+- **Sentiment Pain**: Positive (0), Neutral (0.5), Negative (1)
 - **Urgency Weight**: Low (1), Medium (2), High (3)
 
-This metric provides a quantitative measure of project health, where lower (more negative) values indicate higher technical debt and community frustration.
+This metric is bounded from 0 to 3, where higher values indicate more pain.
+Labels are normalized and matched as exact comma-separated tokens (`bug` does
+not match `debug` or `bugfix`).
 
 ### API Rate Limits
 
