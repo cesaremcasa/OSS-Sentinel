@@ -66,7 +66,7 @@ Sits between the two. High urgency bugs are prevalent, but the community is slig
 
 ### Prerequisites
 
-- **Python 3.9+**
+- **Python 3.11+**
 - **GitHub Personal Access Token** (Classic) with `public_repo` scope
 - **OpenAI API Key** (only for the opt-in real provider)
 
@@ -82,7 +82,7 @@ cd OSS-Sentinel
 Create and activate virtual environment:
 
 ```bash
-python3.9 -m venv venv
+python3.11 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
 
@@ -126,12 +126,21 @@ uv run oss-sentinel process
 uv run oss-sentinel enrich --provider fake
 uv run oss-sentinel analyze
 uv run oss-sentinel run --offline --provider fake
+uv run python scripts/fake_quickstart.py
 ```
 
 `python main.py` remains an alias for `oss-sentinel run`. Use
 `--provider openai` (or `OSS_SENTINEL_PROVIDER=openai`) only when the real
 provider and `OPENAI_API_KEY` are intentionally configured. See
 `DATA_PROVENANCE.md` before using external issue data.
+
+The manual GitHub canary performs exactly one public search with `per_page=1`
+and a five-second timeout. It prints only HTTP status, returned count, and
+rate-limit headers; it is never called by pull requests or release workflows:
+
+```bash
+uv run python scripts/github_canary.py
+```
 
 ### Step 1: Data Ingestion
 
@@ -234,6 +243,16 @@ GitHub API has rate limits. The system includes exponential backoff and retry lo
 ### AI Classification
 
 The system uses OpenAI's GPT-4o-mini for classification due to its optimal cost/performance ratio for structured extraction tasks. Each issue is processed individually with a structured prompt to ensure consistent classification.
+
+### Limitations
+
+The fake provider and CC0 fixture are the only network-free release path.
+Real GitHub ingestion requires operator credentials and permitted source use;
+the historical generated reports are not redistributed. The OpenAI provider
+is optional and remains disabled unless explicitly selected with a key. The
+Pain Index is a heuristic sentiment/urgency score, not a causal or safety
+assessment. CI records dependency audit advisories but does not run external
+canaries.
 
 ---
 

@@ -1,16 +1,15 @@
-name: OSS Sentinel baseline
+name: OSS Sentinel v0.2.0 evidence
 
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
+  push:
+    tags: [v0.2.0]
 
 permissions:
   contents: read
 
 jobs:
-  test:
+  evidence:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -26,11 +25,24 @@ jobs:
       - run: uv run ruff check main.py src tests scripts
       - run: uv run mypy src tests --ignore-missing-imports --follow-imports=skip
       - run: |
-          uv export --frozen --all-extras --no-emit-project --format requirements.txt --no-hashes --output-file "$RUNNER_TEMP/requirements.lock.txt"
-          uv run pip-audit -r "$RUNNER_TEMP/requirements.lock.txt" --no-deps --disable-pip || echo "::warning::locked dependency advisories recorded"
-      - run: |
           uv build --wheel --sdist --out-dir dist
           clean_env="$RUNNER_TEMP/clean-env"
           uv venv "$clean_env"
           uv pip install --python "$clean_env/bin/python" dist/*.whl
           "$clean_env/bin/python" -c "import src.cli; print('clean install PASS')"
+      - run: |
+          uv export --frozen --all-extras --no-emit-project --format requirements.txt --no-hashes --output-file "$RUNNER_TEMP/requirements.lock.txt"
+          audit_status=0
+          uv run pip-audit -r "$RUNNER_TEMP/requirements.lock.txt" --no-deps --disable-pip --format cyclonedx-json --output dist/sbom.cdx.json || audit_status=$?
+          test -s dist/sbom.cdx.json
+          if [ "$audit_status" -ne 0 ]; then
+            echo "::warning::locked dependency advisories recorded in the SBOM"
+          fi
+          cd dist
+          sha256sum *.whl *.tar.gz sbom.cdx.json > SHA256SUMS
+          sha256sum -c SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: oss-sentinel-v0.2.0-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
