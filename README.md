@@ -68,7 +68,7 @@ Sits between the two. High urgency bugs are prevalent, but the community is slig
 
 - **Python 3.9+**
 - **GitHub Personal Access Token** (Classic) with `public_repo` scope
-- **OpenAI API Key**
+- **OpenAI API Key** (only for the opt-in real provider)
 
 ### Installation
 
@@ -86,10 +86,10 @@ python3.9 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
 
-Install dependencies:
+Install the reproducible dependencies:
 
 ```bash
-pip install -r requirements.txt
+uv sync --frozen --extra dev
 ```
 
 ### Configuration
@@ -98,6 +98,8 @@ Set your environment variables:
 
 ```bash
 export GITHUB_TOKEN="your_github_token"
+# Optional: select the real provider explicitly for enrichment.
+export OSS_SENTINEL_PROVIDER="openai"
 export OPENAI_API_KEY="your_openai_key"
 ```
 
@@ -111,6 +113,25 @@ OPENAI_API_KEY=your_openai_key
 ---
 
 ## Running the System
+
+### CLI
+
+The stage boundaries are available through one CLI. The default enrichment
+provider is deterministic and local (`fake`), so tests and offline runs do not
+need a key or network access:
+
+```bash
+uv run oss-sentinel ingest
+uv run oss-sentinel process
+uv run oss-sentinel enrich --provider fake
+uv run oss-sentinel analyze
+uv run oss-sentinel run --offline --provider fake
+```
+
+`python main.py` remains an alias for `oss-sentinel run`. Use
+`--provider openai` (or `OSS_SENTINEL_PROVIDER=openai`) only when the real
+provider and `OPENAI_API_KEY` are intentionally configured. See
+`DATA_PROVENANCE.md` before using external issue data.
 
 ### Step 1: Data Ingestion
 
@@ -167,15 +188,17 @@ python main.py
 ```
 .
 ├── src/
+│   ├── cli.py              # ingest/process/enrich/analyze/run commands
 │   ├── ingestion.py       # GitHub API data fetching
 │   ├── processing.py      # Data cleaning & normalization
+│   ├── providers.py        # lazy OpenAI provider and deterministic fake
 │   ├── enrichment.py      # AI-powered classification
 │   └── analyze.py         # Pain Index calculation & visualization
 ├── data/
-│   ├── raw/               # Raw GitHub API responses
-│   ├── processed/         # Cleaned & structured data
-│   ├── enriched/          # AI-classified data
-│   └── analysis/          # Final metrics & reports
+│   ├── raw/               # operator-provided GitHub API responses
+│   ├── processed/         # local generated data (ignored)
+│   ├── enriched/          # local generated data (ignored)
+│   └── analysis/          # local generated reports (ignored)
 ├── assets/
 │   └── plots/             # Generated visualizations
 ├── main.py                # Full pipeline orchestrator

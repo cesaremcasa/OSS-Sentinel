@@ -1,9 +1,7 @@
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
-import numpy as np
 from pathlib import Path
-import ast
 
 # --- CONFIGURAÇÃO DE CAMINHOS E ESTILO ---
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -18,10 +16,10 @@ PLOTS_DIR.mkdir(parents=True, exist_ok=True)
 # Estilo profissional para plots
 sns.set_theme(style="whitegrid")
 
-def load_and_clean_data():
+def load_and_clean_data(enriched_dir=ENRICHED_DIR):
     """Carrega dados, ignora POCs e adiciona source_repo."""
     dfs = []
-    files = list(ENRICHED_DIR.glob("enriched_*.csv"))
+    files = list(Path(enriched_dir).glob("enriched_*.csv"))
     
     if not files:
         print("Nenhum arquivo encontrado em data/enriched/")
@@ -94,7 +92,7 @@ def analyze_labels(df):
     
     return top_5_labels, df
 
-def generate_heatmap(df, top_labels):
+def generate_heatmap(df, top_labels, plots_dir=PLOTS_DIR):
     """Gera heatmap de Sentimento Médio por Repo x Top Labels."""
     if not top_labels:
         return
@@ -136,12 +134,14 @@ def generate_heatmap(df, top_labels):
     plt.xlabel('Label', fontsize=12)
     plt.tight_layout()
     
-    plot_path = PLOTS_DIR / "heatmap_sentiment_labels.png"
+    plots_dir = Path(plots_dir)
+    plots_dir.mkdir(parents=True, exist_ok=True)
+    plot_path = plots_dir / "heatmap_sentiment_labels.png"
     plt.savefig(plot_path)
     print(f"Heatmap salvo em: {plot_path}")
     plt.close()
 
-def generate_health_barplot(df):
+def generate_health_barplot(df, plots_dir=PLOTS_DIR):
     """Gera gráfico comparativo do Pain Index médio por Repositório."""
     if df.empty:
         return
@@ -164,7 +164,9 @@ def generate_health_barplot(df):
     plt.ylabel('Repositório', fontsize=12)
     plt.tight_layout()
     
-    plot_path = PLOTS_DIR / "barplot_pain_index_comparison.png"
+    plots_dir = Path(plots_dir)
+    plots_dir.mkdir(parents=True, exist_ok=True)
+    plot_path = plots_dir / "barplot_pain_index_comparison.png"
     plt.savefig(plot_path)
     print(f"Barplot salvo em: {plot_path}")
     plt.close()
@@ -173,9 +175,11 @@ def generate_health_barplot(df):
     print("\n--- RANKING DE CLIMA (Pain Index Médio) ---")
     print(repo_pain.to_string(index=False))
 
-def main():
+def run_analysis(enriched_dir=ENRICHED_DIR, analysis_dir=ANALYSIS_DIR, plots_dir=PLOTS_DIR):
     # 1. Load
-    df = load_and_clean_data()
+    analysis_dir = Path(analysis_dir)
+    analysis_dir.mkdir(parents=True, exist_ok=True)
+    df = load_and_clean_data(enriched_dir)
     if df.empty:
         return
 
@@ -186,10 +190,14 @@ def main():
     top_labels, df = analyze_labels(df)
 
     # 4. Visualizations
-    generate_heatmap(df, top_labels)
-    generate_health_barplot(df)
+    generate_heatmap(df, top_labels, plots_dir)
+    generate_health_barplot(df, plots_dir)
     
     print("\nAnálise Deep Diagnostic concluída. Verifique data/analysis/plots/.")
+
+
+def main():
+    run_analysis()
 
 if __name__ == "__main__":
     main()

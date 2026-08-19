@@ -9,16 +9,15 @@ from dotenv import load_dotenv
 
 # --- CONFIGURAÇÃO DE AMBIENTE ---
 BASE_DIR = Path(__file__).resolve().parent.parent
-ENV_PATH = BASE_DIR / "config" / ".env"
 CONFIG_PATH = BASE_DIR / "config" / "settings.yaml"
 
-load_dotenv(ENV_PATH)
+load_dotenv(BASE_DIR / "config" / ".env")
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 class IngestionEngine:
-    def __init__(self, output_dir="data/raw"):
+    def __init__(self, output_dir="data/raw", config_path=None):
         self.output_dir = BASE_DIR / output_dir
         self.github_token = os.getenv("GITHUB_TOKEN")
         self.headers = {"Accept": "application/vnd.github.v3+json"}
@@ -27,15 +26,16 @@ class IngestionEngine:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
         # Carregar configurações YAML
+        self.config_path = Path(config_path) if config_path else CONFIG_PATH
         self.config = self._load_config()
 
     def _load_config(self):
         """Lê o arquivo de configuração settings.yaml"""
         try:
-            with open(CONFIG_PATH, 'r') as f:
+            with open(self.config_path, 'r') as f:
                 return yaml.safe_load(f)
         except FileNotFoundError:
-            logger.error(f"Arquivo de configuração não encontrado em: {CONFIG_PATH}")
+            logger.error(f"Arquivo de configuração não encontrado em: {self.config_path}")
             raise
         except yaml.YAMLError as e:
             logger.error(f"Erro ao ler YAML: {e}")
